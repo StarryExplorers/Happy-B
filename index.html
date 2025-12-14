@@ -6,14 +6,11 @@
 <title>Seasonal Birthday Tree — Happy Birthday Grandpa</title>
 <style>
   :root{
-    --stage-w: 1200px;
     --bg-dark: #07142a;
-    --final-bg: linear-gradient(180deg,#041423,#07243a);
   }
   html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#fff;background:var(--bg-dark);}
   .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:18px;}
   .card{width:min(1100px,96vw);height:min(720px,86vh);border-radius:12px;overflow:hidden;position:relative;box-shadow:0 18px 60px rgba(0,0,0,0.6);}
-  /* four quadrant backgrounds (images you provide) */
   .grid{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;}
   .cell{position:relative;overflow:hidden;border:1px solid rgba(255,255,255,0.02)}
   .spring{ background: center/cover no-repeat url('spring.png'); background-color:#dff7e2; }
@@ -21,22 +18,17 @@
   .autumn{ background: center/cover no-repeat url('autumn.png'); background-color:#fff0e0; }
   .winter{ background: center/cover no-repeat url('winter.png'); background-color:#eaf6ff; }
 
-  /* overlay canvas (one canvas to draw all 4 trees) */
   canvas#scene{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:2}
 
-  /* top UI */
   .ui{position:absolute;left:12px;top:12px;z-index:6;display:flex;gap:8px}
   button{padding:8px 12px;border-radius:10px;border:0;background:linear-gradient(180deg,#0d6d9a,#044a6b);color:white;cursor:pointer;box-shadow:0 6px 14px rgba(0,0,0,0.4)}
   .small{color:rgba(255,255,255,0.85);font-size:13px;margin-left:8px;align-self:center}
 
-  /* final birthday screen */
   .final{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;opacity:0;pointer-events:none;transition:opacity 900ms ease;}
   .final.show{opacity:1;pointer-events:auto}
   .final .moon{width:160px;height:160px;border-radius:50%;position:relative;box-shadow:0 0 40px 20px rgba(255,250,230,0.06), inset -14px -6px 40px rgba(0,0,0,0.12); background:radial-gradient(circle at 36% 30%, rgba(255,255,245,0.98), rgba(255,255,245,0.85) 35%, rgba(255,255,245,0.0) 70%); transform:translateY(-24px)}
   .final h1{font-size:clamp(28px,4.5vw,56px);color:#dff7ff;text-shadow:0 0 18px rgba(121,198,255,0.45), 0 6px 30px rgba(0,0,0,0.6)}
   .final .glow{font-weight:800;letter-spacing:1px;color:#dff7ff;text-shadow:0 0 10px rgba(121,198,255,0.8), 0 10px 30px rgba(3,18,30,0.6);font-size:clamp(22px,3vw,36px);}
-
-  /* small credits */
   .footer{position:absolute;right:12px;bottom:10px;z-index:6;color:rgba(255,255,255,0.7);font-size:12px}
 </style>
 </head>
@@ -54,7 +46,7 @@
 
       <div class="ui">
         <button id="replay">Replay</button>
-        <span class="small">Seasonal trees grow automatically on load</span>
+        <span class="small">Seasonal trees grow automatically on load (faster)</span>
       </div>
 
       <div class="final" id="finalScreen" aria-hidden="true">
@@ -68,143 +60,103 @@
   </div>
 
 <script>
-/* --------------------
-  Seasonal Trees demo
-  - Single canvas divided into 4 regions
-  - Each region grows a natural tree (recursive rules)
-  - Leaves/hearts are drawn with variations (size, rotation, color)
-  - Autumn has falling hearts, Winter has snow
-  - All trees grow simultaneously; after ~29s show final message
--------------------- */
+/* Faster + better seasonal trees
+   - Reduced total time (~12s)
+   - Precomputed randomness, phases, pop delays, colors
+   - Subtle sway, improved falling behavior
+*/
 
+/* TIMINGS (faster) */
+const TIMINGS = {
+  branchGrow: 8000,   // was 18000 -> faster
+  leavesBloom: 2500,  // was 6000 -> faster
+  afterPause: 800,
+  fadeToFinal: 800
+};
+const TOTAL = TIMINGS.branchGrow + TIMINGS.leavesBloom + TIMINGS.afterPause + TIMINGS.fadeToFinal;
+
+// canvas + DPR
 const canvas = document.getElementById('scene');
 const ctx = canvas.getContext('2d', { alpha: true });
-let DPR = Math.max(1, window.devicePixelRatio || 1);
-
-function resize() {
+let DPR = Math.min(2, Math.max(1, window.devicePixelRatio || 1)); // cap DPR to 2 for perf
+let layout = null;
+function resize(){
   const rect = canvas.getBoundingClientRect();
   canvas.width = Math.round(rect.width * DPR);
   canvas.height = Math.round(rect.height * DPR);
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  layout = rect; // store for partitions
+  layout = rect;
 }
 window.addEventListener('resize', resize);
 resize();
 
-/* timeline (ms) */
-const TIMINGS = {
-  branchGrow: 18000,  // draw branches progressively
-  leavesBloom: 6000,  // reveal leaves/hearts
-  afterPause: 1200,   // small pause
-  fadeToFinal: 1200   // final fade (trigger)
-};
-const TOTAL = TIMINGS.branchGrow + TIMINGS.leavesBloom + TIMINGS.afterPause + TIMINGS.fadeToFinal; // ~29.4s
+/* quick helpers */
+const rand = (a,b)=> a + Math.random()*(b-a);
+const clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
 
-/* Quadrant definitions (calc from canvas size) */
-function quadRects() {
-  const w = canvas.width / DPR, h = canvas.height / DPR;
-  const halfW = w/2, halfH = h/2;
+/* cubic bezier point */
+function cubicAt(p0,p1,p2,p3,t){
+  const u=1-t, tt=t*t, uu=u*u, uuu=uu*u, ttt=tt*t;
   return {
-    spring: {x:0, y:0, w:halfW, h:halfH},
-    summer: {x:halfW, y:0, w:halfW, h:halfH},
-    autumn: {x:0, y:halfH, w:halfW, h:halfH},
-    winter: {x:halfW, y:halfH, w:halfW, h:halfH}
+    x: uuu*p0.x + 3*uu*t*p1.x + 3*u*tt*p2.x + ttt*p3.x,
+    y: uuu*p0.y + 3*uu*t*p1.y + 3*u*tt*p2.y + ttt*p3.y
   };
 }
 
-/* Utility: cubic bezier point at t */
-function cubicAt(p0,p1,p2,p3,t){
-  const u=1-t; const tt=t*t; const uu=u*u; const uuu=uu*u; const ttt=tt*t;
-  const x = uuu*p0.x + 3*uu*t*p1.x + 3*u*tt*p2.x + ttt*p3.x;
-  const y = uuu*p0.y + 3*uu*t*p1.y + 3*u*tt*p2.y + ttt*p3.y;
-  return {x,y};
-}
-
-/* Generate branch structure recursively.
-   Each branch is represented by an object:
-   {p0, p1, p2, p3, thickness, depth, children: [...], points: [...]}
-   Points will be sampled along bezier to animate partial drawing.
-*/
+/* branch generator: precompute samples + a random phase for sway */
 function generateBranch(start, angle, length, depth, maxDepth, thickness, spread){
-  // end point
   const rad = angle * Math.PI/180;
   const ex = start.x + Math.cos(rad) * length;
   const ey = start.y + Math.sin(rad) * length;
-  // control points to make a nice curve (randomized slightly for natural look)
-  const cp1 = {
-    x: start.x + Math.cos(rad - 0.35) * (length * (0.35 + Math.random()*0.2)),
-    y: start.y + Math.sin(rad - 0.35) * (length * (0.35 + Math.random()*0.2))
-  };
-  const cp2 = {
-    x: start.x + Math.cos(rad + 0.35) * (length * (0.6 + Math.random()*0.2)),
-    y: start.y + Math.sin(rad + 0.35) * (length * (0.6 + Math.random()*0.2))
-  };
-  const branch = {
-    p0: {x:start.x, y:start.y},
-    p1: cp1,
-    p2: cp2,
-    p3: {x:ex, y:ey},
-    thickness,
-    depth,
-    children: []
-  };
-  // sample points along this bezier for smooth progressive drawing
-  const samples = Math.max(10, Math.round(14 + length / 8));
-  branch.points = [];
+  const cp1 = { x: start.x + Math.cos(rad - 0.35) * (length * (0.35 + Math.random()*0.18)), y: start.y + Math.sin(rad - 0.35) * (length * (0.35 + Math.random()*0.18)) };
+  const cp2 = { x: start.x + Math.cos(rad + 0.35) * (length * (0.6 + Math.random()*0.18)), y: start.y + Math.sin(rad + 0.35) * (length * (0.6 + Math.random()*0.18)) };
+  const branch = { p0:{x:start.x,y:start.y}, p1:cp1, p2:cp2, p3:{x:ex,y:ey}, thickness, depth, children:[], _phase: Math.random()*Math.PI*2 };
+
+  // sample points (fewer samples for shorter branches -> faster)
+  const samples = Math.max(8, Math.round(10 + length / 14));
+  branch.points = new Array(samples+1);
   for(let i=0;i<=samples;i++){
-    const t = i/samples;
-    branch.points.push(cubicAt(branch.p0,branch.p1,branch.p2,branch.p3,t));
+    branch.points[i] = cubicAt(branch.p0, branch.p1, branch.p2, branch.p3, i/samples);
   }
 
-  // branching condition
+  // branching
   if(depth < maxDepth){
-    // decide number of children (1-3) biased by depth
     const chance = Math.random();
-    const num = chance < 0.2 ? 1 : (chance < 0.9 ? 2 : 3);
+    const num = chance < 0.25 ? 1 : (chance < 0.88 ? 2 : 3);
     for(let i=0;i<num;i++){
-      // child angle deviates
       const angDelta = (Math.random()*spread - spread/2) + (i - (num-1)/2) * (10 + Math.random()*6);
       const newAngle = angle + angDelta;
-      const newLen = length * (0.58 + Math.random()*0.18);
-      const newThick = Math.max(0.8, thickness * (0.6 + Math.random()*0.12));
+      const newLen = length * (0.56 + Math.random()*0.16);
+      const newThick = Math.max(0.7, thickness * (0.62 + Math.random()*0.12));
       branch.children.push(generateBranch(branch.p3, newAngle, newLen, depth+1, maxDepth, newThick, spread));
     }
   }
   return branch;
 }
 
-/* Create tree structure for a quadrant */
+/* create tree (root trunk + main branches) */
 function createTreeFor(rect, season){
-  // root starting point somewhere near bottom center of rect
   const baseX = rect.x + rect.w*0.5;
   const baseY = rect.y + rect.h*0.92;
-  // parameters tuned per season for look
-  const maxDepth = 4; // controls complexity
+  const maxDepth = 4;
   const trunkLen = rect.h * 0.28;
-  const trunkThickness = Math.max(6, rect.w * 0.014);
-  // generate trunk as a main bezier
+  const trunkThickness = Math.max(5, rect.w * 0.014);
   const trunk = generateBranch({x:baseX,y:baseY}, -90, trunkLen, 0, 1, trunkThickness, 18);
-  // attach branches recursively to trunk tip
-  const canopyDepth = maxDepth;
-  // create primary branches from trunk tip
-  const children = [];
-  const mainAngles = [-85,-95,-60,-120]; // slightly varied
+
+  const mainAngles = [-86,-94,-60,-120];
   for(let i=0;i<4;i++){
     const ang = mainAngles[i] + (Math.random()*12-6);
-    const len = trunkLen * (0.9 * (0.8 + Math.random()*0.5));
-    children.push(generateBranch(trunk.p3, ang, len, 1, canopyDepth, trunkThickness*0.66, 46));
+    const len = trunkLen * (0.82 + Math.random()*0.5);
+    trunk.children.push(generateBranch(trunk.p3, ang, len, 1, maxDepth, trunkThickness*0.66, 48));
   }
-  trunk.children = trunk.children.concat(children);
 
-  // additional small clusters near trunk
-  // recursively expand children deeper using a helper to flatten counts
+  // attach some random side clusters
   function attachRandom(node, depthLeft){
     if(depthLeft<=0) return;
-    const decide = Math.random();
-    if(decide>0.45 && node.depth < canopyDepth){
-      const ang = -90 + (Math.random()*140 - 70);
-      const len = trunkLen * (0.5 + Math.random()*0.6) * Math.pow(0.7, node.depth);
-      node.children.push(generateBranch(node.p3, ang, len, node.depth+1, canopyDepth, node.thickness*0.6, 50));
+    if(Math.random()>0.46 && node.depth < maxDepth){
+      const ang = -90 + (Math.random()*160 - 80);
+      const len = trunkLen * (0.46 + Math.random()*0.6) * Math.pow(0.72, node.depth);
+      node.children.push(generateBranch(node.p3, ang, len, node.depth+1, maxDepth, node.thickness*0.6, 54));
     }
     node.children.forEach(ch => attachRandom(ch, depthLeft-1));
   }
@@ -213,322 +165,319 @@ function createTreeFor(rect, season){
   return {root:trunk, rect, season};
 }
 
-/* flatten tree branches into an ordered array for progressive drawing */
+/* flatten */
 function flattenBranches(node, list=[]){
   list.push(node);
-  node.children.forEach(ch => flattenBranches(ch, list));
+  for(const ch of node.children) flattenBranches(ch, list);
   return list;
 }
 
-/* draw a single branch up to given progress ratio (0..1)
-   we use branch.points to draw up to idx
-*/
-function drawBranchProgress(branch, progress, colorBase){
+/* draw branch progressively with tiny sway */
+function drawBranchProgress(branch, progress, colorBase, elapsed, idx){
   const pts = branch.points;
   const n = pts.length;
   const upto = Math.floor(progress * (n-1));
-  if(upto<=0){
-    // draw nothing except maybe a tiny dot at start
-    return;
-  }
+  if(upto <= 0) return;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  // subtle color based on depth for layering (back darker)
-  const shade = (branch.depth || 0);
   const r = colorBase.r, g=colorBase.g, b=colorBase.b;
-  const alpha = 0.95 - Math.min(0.5, (branch.depth||0)*0.12);
+  const alpha = 0.96 - Math.min(0.5, (branch.depth||0)*0.12);
   ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
   ctx.lineWidth = Math.max(0.6, branch.thickness);
+
+  // sway amplitude reduced as branch finishes drawing
+  const swayAmp = 0.9 * (1 - progress) * (1 + (branch.depth||0)*0.08);
+  const phase = branch._phase + idx * 0.4;
   ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
+  ctx.moveTo(pts[0].x + Math.sin(phase + elapsed*0.002)*swayAmp, pts[0].y + Math.cos(phase + elapsed*0.001)*swayAmp*0.5);
   for(let i=1;i<=upto;i++){
-    ctx.lineTo(pts[i].x, pts[i].y);
+    const p = pts[i];
+    const ox = Math.sin(phase + (i*0.12) + elapsed*0.002) * swayAmp;
+    const oy = Math.cos(phase + (i*0.09) + elapsed*0.001) * swayAmp * 0.5;
+    ctx.lineTo(p.x + ox, p.y + oy);
   }
   ctx.stroke();
 }
 
-/* draw heart shape at (x,y) ; scale controls size */
-function drawHeart(x,y,scale, color){
+/* heart + snow drawing */
+function drawHeart(x,y,scale,color){
   ctx.save();
   ctx.translate(x,y);
   ctx.scale(scale,scale);
   ctx.beginPath();
-  // simple heart path using bezier curves relative to origin
   ctx.moveTo(0,-8);
   ctx.bezierCurveTo(-8,-8, -8,-18, 0,-20);
   ctx.bezierCurveTo(8,-18, 8,-8, 0,-8);
   ctx.closePath();
   ctx.fillStyle = color;
-  // slight shadow / glow
-  ctx.shadowColor = 'rgba(0,0,0,0.18)';
+  ctx.shadowColor = 'rgba(0,0,0,0.16)';
   ctx.shadowBlur = 6;
   ctx.fill();
   ctx.restore();
   ctx.shadowBlur = 0;
 }
-
-/* draw a small leaf (oval) for winter snow fallback if needed */
-function drawSnowflake(x,y, size){
+function drawSnow(x,y,size,alpha=1){
   ctx.save();
-  ctx.translate(x,y);
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.beginPath();
-  ctx.arc(0,0,size/2,0,Math.PI*2);
-  ctx.fill();
+  ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+  ctx.beginPath(); ctx.arc(x,y,size/2,0,Math.PI*2); ctx.fill();
   ctx.restore();
 }
 
-/* season palettes and behaviors */
+/* seasonal palettes and precompute functions */
 const SEASONS = {
   spring: {
-    leafColor: (i)=> `rgba(86, 183, 107, ${0.95 - Math.random()*0.12})`, // greens
-    leafScale: ()=> 0.9 + Math.random()*0.6,
-    falling:false, extraDraw: function(ctx, rect, t) { /* tiny flowers at ground */ }
+    palette: ['#80c281','#52b767','#2fa34a','#40c26a'],
+    scale: ()=> 0.9 + Math.random()*0.6,
+    falling: false,
+    extraDraw(ctx,rect,t){}
   },
   summer: {
-    leafColor: (i)=> `rgba(${230+Math.random()*10|0}, ${90+Math.random()*40|0}, ${40+Math.random()*30|0}, ${0.98 - Math.random()*0.08})`, // warm orange/red
-    leafScale: ()=> 0.95 + Math.random()*0.6,
+    palette: ['#ff6b4a','#ff8a4b','#ffb05a','#ff9a6b'],
+    scale: ()=> 0.95 + Math.random()*0.6,
     falling:false,
-    extraDraw: function(ctx, rect, t){
-      // draw a warm sun in top-right of summer quadrant
-      const sunX = rect.x + rect.w*0.85, sunY = rect.y + rect.h*0.14, R = Math.min(rect.w,rect.h)*0.12;
-      const grd = ctx.createRadialGradient(sunX, sunY, R*0.2, sunX, sunY, R*2);
-      grd.addColorStop(0, 'rgba(255,230,170,0.95)');
-      grd.addColorStop(1, 'rgba(255,175,65,0.06)');
-      ctx.fillStyle = grd;
-      ctx.beginPath();
-      ctx.arc(sunX, sunY, R*1.4, 0, Math.PI*2);
-      ctx.fill();
+    extraDraw(ctx,rect,t){
+      const sunX = rect.x + rect.w*0.82, sunY = rect.y + rect.h*0.14, R = Math.min(rect.w,rect.h)*0.12;
+      const g = ctx.createRadialGradient(sunX,sunY,R*0.2,sunX,sunY,R*1.8);
+      g.addColorStop(0,'rgba(255,235,170,0.98)');
+      g.addColorStop(1,'rgba(255,170,60,0.06)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(sunX,sunY,R*1.3,0,Math.PI*2); ctx.fill();
     }
   },
   autumn: {
-    leafColor: (i)=> `rgba(${220+Math.random()*20|0}, ${120+Math.random()*30|0}, ${40+Math.random()*20|0}, ${0.95 - Math.random()*0.12})`,
-    leafScale: ()=> 0.95 + Math.random()*0.55,
+    palette: ['#ff9b3a','#ffa84a','#ff7f3a','#e07a2f'],
+    scale: ()=> 0.95 + Math.random()*0.5,
     falling:true
   },
   winter: {
-    leafColor: ()=> null,
-    leafScale: ()=> 0.7,
-    falling:true, // snow
+    palette: [],
+    scale: ()=> 0.7,
+    falling:true
   }
 };
 
-/* Build trees for each quadrant */
+/* build trees and precompute leaves (colors, popDelay, jitter) */
 let trees = null;
+function quadRects(){
+  const w = canvas.width / DPR, h = canvas.height / DPR;
+  const halfW = w/2, halfH = h/2;
+  return {
+    spring: {x:0,y:0,w:halfW,h:halfH},
+    summer: {x:halfW,y:0,w:halfW,h:halfH},
+    autumn: {x:0,y:halfH,w:halfW,h:halfH},
+    winter: {x:halfW,y:halfH,w:halfW,h:halfH}
+  };
+}
+
+function buildTrees(){
+  const rects = quadRects();
+  trees = {
+    spring: createTreeFor(rects.spring,'spring'),
+    summer: createTreeFor(rects.summer,'summer'),
+    autumn: createTreeFor(rects.autumn,'autumn'),
+    winter: createTreeFor(rects.winter,'winter')
+  };
+  for(const k in trees){
+    const tr = trees[k];
+    tr.branches = flattenBranches(tr.root, []);
+    tr.leaves = [];
+    // precompute leaves with color, scale, jitter, popDelay (no randomness during draw)
+    for(let bi=0; bi<tr.branches.length; bi++){
+      const b = tr.branches[bi];
+      // endpoint leaf condition
+      if(b.children.length===0 || b.depth >= 3 || Math.random() > 0.75){
+        const px = b.p3.x + (Math.random()*8-4);
+        const py = b.p3.y + (Math.random()*8-4);
+        const scale = SEASONS[k].scale();
+        const color = (SEASONS[k].palette.length ? SEASONS[k].palette[Math.floor(Math.random()*SEASONS[k].palette.length)] : '#fff');
+        const popDelay = 120 + tr.leaves.length * 42; // faster pop ordering
+        const rot = (Math.random()*2-1)*0.6;
+        tr.leaves.push({x:px,y:py,scale,color,popDelay,rot,drawn:false});
+      }
+    }
+    if(k==='winter') tr.leaves = []; // bare
+    tr.falling = []; // particle pool (reused arrays)
+  }
+}
+
+/* animation state */
+let startTime = null, raf = null;
+
+/* main draw */
+function drawFrame(ts){
+  if(!startTime) startTime = ts;
+  const elapsed = ts - startTime;
+  ctx.clearRect(0,0,canvas.width/DPR, canvas.height/DPR);
+
+  const rects = quadRects();
+  const keys = ['spring','summer','autumn','winter'];
+
+  for(let ki=0; ki<keys.length; ki++){
+    const key = keys[ki];
+    const tree = trees[key];
+    const rect = rects[key];
+
+    ctx.save();
+    ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.w, rect.h); ctx.clip();
+
+    if(SEASONS[key].extraDraw) SEASONS[key].extraDraw(ctx,rect,elapsed);
+
+    // branch progress
+    const branchProg = clamp(elapsed / TIMINGS.branchGrow, 0, 1);
+    const leavesProg = clamp((elapsed - TIMINGS.branchGrow) / TIMINGS.leavesBloom, 0, 1);
+
+    // draw branches (deeper first gives depth; precomputed list)
+    const branches = tree.branches;
+    for(let bi=0; bi<branches.length; bi++){
+      const br = branches[bi];
+      const localDelay = (bi % 6) * 30; // tighter staggering -> faster overall
+      const localProg = clamp((elapsed - localDelay) / TIMINGS.branchGrow, 0, 1);
+      drawBranchProgress(br, localProg, {r:110,g:69,b:51}, elapsed, bi);
+    }
+
+    // draw leaves/hearts
+    for(let li=0; li<tree.leaves.length; li++){
+      const leaf = tree.leaves[li];
+      const popDelay = leaf.popDelay;
+      const lp = clamp((elapsed - TIMINGS.branchGrow - popDelay) / Math.max(10, TIMINGS.leavesBloom - popDelay), 0, 1);
+      if(lp > 0){
+        const ease = Math.sin(lp * Math.PI * 0.5);
+        const x = leaf.x + (1-ease) * leaf.rot * 6 * (Math.random()*0.6); // tiny jitter but not heavy
+        const y = leaf.y + (1-ease) * (Math.random()*6 - 3);
+        const sc = leaf.scale * (0.45 + ease*1.4);
+        ctx.save();
+        ctx.translate(x,y);
+        ctx.rotate(leaf.rot * (1-lp)*0.4);
+        drawHeart(0,0, sc, leaf.color);
+        ctx.restore();
+        leaf.drawn = leaf.drawn || lp > 0.03;
+      }
+    }
+
+    // seasonal particle updates (autumn hearts fall; winter snow)
+    if(SEASONS[key].falling){
+      if(key === 'autumn'){
+        if(leavesProg > 0.18 && Math.random() < 0.08){ // higher spawn rate for liveliness
+          const src = tree.leaves[Math.floor(Math.random()*Math.max(1,tree.leaves.length))];
+          if(src){
+            tree.falling.push({
+              x: src.x + rand(-8,8),
+              y: src.y,
+              vx: rand(-0.6,0.6),
+              vy: 0.9 + Math.random()*0.8,
+              rot: rand(-1.8,1.8),
+              size: rand(0.9,1.5),
+              color: SEASONS[key].palette[Math.floor(Math.random()*SEASONS[key].palette.length)],
+              life: 0
+            });
+          }
+        }
+        // update & draw
+        for(let i=tree.falling.length-1;i>=0;i--){
+          const p = tree.falling[i];
+          p.vy += 0.025;
+          p.x += p.vx;
+          p.y += p.vy;
+          p.rot += 0.06;
+          p.life += 1;
+          ctx.save();
+          ctx.translate(p.x,p.y);
+          ctx.rotate(p.rot);
+          drawHeart(0,0, p.size, p.color);
+          ctx.restore();
+          if(p.y > rect.y + rect.h + 30 || p.life > 220) tree.falling.splice(i,1);
+        }
+      } else if(key === 'winter'){
+        // spawn snow more frequently
+        if(Math.random() < 0.14) {
+          tree.falling.push({
+            x: rect.x + Math.random()*rect.w,
+            y: rect.y - 6,
+            vx: rand(-0.25,0.25),
+            vy: rand(0.3,0.9),
+            size: rand(1.6,3.8),
+            alpha: rand(0.6,1),
+            life:0
+          });
+        }
+        for(let i=tree.falling.length-1;i>=0;i--){
+          const s = tree.falling[i];
+          s.vy += 0.002;
+          s.x += s.vx;
+          s.y += s.vy;
+          s.life++;
+          drawSnow(s.x, s.y, s.size, clamp(s.alpha - s.life*0.0015, 0.15, 1));
+          if(s.y > rect.y + rect.h + 20 || s.life > 600) tree.falling.splice(i,1);
+        }
+      }
+    }
+
+    ctx.restore();
+  } // end each quadrant
+
+  if(elapsed < TOTAL){
+    raf = requestAnimationFrame(drawFrame);
+  } else {
+    // done -> show final overlay
+    document.getElementById('finalScreen').classList.add('show');
+  }
+}
+
+/* build + start utilities */
 function buildTrees(){
   const rects = quadRects();
   trees = {
     spring: createTreeFor(rects.spring, 'spring'),
     summer: createTreeFor(rects.summer, 'summer'),
     autumn: createTreeFor(rects.autumn, 'autumn'),
-    winter: createTreeFor(rects.winter, 'winter'),
+    winter: createTreeFor(rects.winter, 'winter')
   };
-  // flatten branches per tree
+  // flatten branches and prepare leaves
   for(const k in trees){
-    const root = trees[k].root;
-    trees[k].branches = flattenBranches(root, []);
-    // create leaf slots (branch endpoints where children length==0 or small)
-    trees[k].leaves = [];
-    trees[k].branches.forEach(b=>{
-      // endpoint is p3
-      if(b.children.length===0 || b.depth >= 3){
-        trees[k].leaves.push({x:b.p3.x + (Math.random()*8-4), y:b.p3.y + (Math.random()*8-4), scale: (SEASONS[k].leafScale()), drawn:false});
-      } else {
-        // also sometimes add leaves along longer branches
-        if(Math.random() > 0.7) trees[k].leaves.push({x:b.p3.x + (Math.random()*12-6), y:b.p3.y + (Math.random()*12-6), scale: (SEASONS[k].leafScale()), drawn:false});
+    const t = trees[k];
+    t.branches = flattenBranches(t.root, []);
+    t.leaves = [];
+    for(let bi=0; bi<t.branches.length; bi++){
+      const b = t.branches[bi];
+      if(b.children.length===0 || b.depth >= 3 || Math.random() > 0.75){
+        const px = b.p3.x + rand(-5,5);
+        const py = b.p3.y + rand(-5,5);
+        const scale = SEASONS[k].scale();
+        const color = SEASONS[k].palette.length ? SEASONS[k].palette[Math.floor(Math.random()*SEASONS[k].palette.length)] : '#fff';
+        const popDelay = 80 + t.leaves.length * 36;
+        const rot = rand(-1.2,1.2);
+        t.leaves.push({x:px,y:py,scale,color,popDelay,rot,drawn:false});
       }
-    });
-    // some tuning: winter has no leaves
-    if(k==='winter'){
-      trees[k].leaves = []; // bare
     }
-    // autumn falling particle list
-    trees[k].falling = [];
+    if(k==='winter') t.leaves = [];
+    t.falling = [];
   }
 }
 
-/* Animation state */
 let startTime = null;
-let raf = null;
-
-/* Main draw loop */
-function drawFrame(ts){
-  if(!startTime) startTime = ts;
-  const elapsed = (ts - startTime);
-  // clear
-  ctx.clearRect(0,0,canvas.width/DPR, canvas.height/DPR);
-
-  // per-tree drawing
-  const rects = quadRects();
-  const keys = ['spring','summer','autumn','winter'];
-  keys.forEach(key=>{
-    const tree = trees[key];
-    const rect = rects[key];
-    // clip to quadrant so drawings don't bleed
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(rect.x, rect.y, rect.w, rect.h);
-    ctx.clip();
-
-    // seasonal extra drawings (sun etc)
-    if(SEASONS[key].extraDraw) SEASONS[key].extraDraw(ctx, rect, elapsed);
-
-    // compute branch drawing progress: 0..1 over TIMINGS.branchGrow
-    const branchProg = Math.min(1, elapsed / TIMINGS.branchGrow);
-    // leaves bloom starts after branchProg full: leavesProg 0..1 across TIMINGS.leavesBloom
-    const leavesStart = TIMINGS.branchGrow;
-    const leavesProg = Math.max(0, Math.min(1, (elapsed - leavesStart) / TIMINGS.leavesBloom));
-
-    // draw branches in order (back to front): we already flattened in pre-order; to give depth, draw deeper first
-    const branches = tree.branches.slice().sort((a,b)=> (a.depth - b.depth)); // shallow first or deep first? choose deep first
-    branches.forEach(br=>{
-      // compute per-branch local progress (slight staggering using branch index)
-      const idx = tree.branches.indexOf(br);
-      // small offset so branches don't all draw at same instant
-      const localDelay = (idx % 6) * 60; // milliseconds staggering
-      const localProg = Math.max(0, Math.min(1, (elapsed - localDelay) / TIMINGS.branchGrow));
-      // color base for bark (brownish)
-      const colorBase = {r:110, g:69, b:51};
-      drawBranchProgress(br, localProg, colorBase);
-    });
-
-    // draw leaves/hearts according to leavesProg
-    const leaves = tree.leaves;
-    leaves.forEach((leaf, i)=>{
-      // each leaf has its own pop delay
-      const popDelay = i * 80 + 200; // stagger
-      const lp = Math.max(0, Math.min(1, (elapsed - TIMINGS.branchGrow - popDelay) / (TIMINGS.leavesBloom - popDelay)));
-      if(lp > 0){
-        // ease
-        const ease = Math.sin(lp * Math.PI * 0.5);
-        // position slightly jitter for "pop"
-        const x = leaf.x + (1 - lp) * (Math.random()*6 - 3);
-        const y = leaf.y + (1 - lp) * (Math.random()*6 - 3);
-        // seasonal color
-        const color = (SEASONS[key].leafColor && SEASONS[key].leafColor(i)) || 'rgba(255,255,255,0.95)';
-        const sc = leaf.scale * (0.5 + ease*1.2);
-        // some rotation based on i and key for natural look: (we use transform via saved canvas)
-        ctx.save();
-        ctx.translate(x,y);
-        ctx.rotate((i%7 - 3) * 0.06 * (1-lp));
-        ctx.translate(-x,-y);
-        drawHeart(x,y, sc, color);
-        ctx.restore();
-
-        // mark drawn
-        leaf.drawn = leaf.drawn || lp > 0.05;
-      }
-    });
-
-    // seasonal falling behavior (autumn hearts, winter snow)
-    if(tree && (SEASONS[key].falling)){
-      if(key === 'autumn'){
-        // spawn some falling hearts after leavesProg>0.2
-        if(leavesProg > 0.25 && Math.random() < 0.03){
-          // pick random leaf origin
-          const src = tree.leaves[Math.floor(Math.random()*Math.max(1,tree.leaves.length))];
-          if(src){
-            tree.falling.push({
-              x: src.x + (Math.random()*20-10),
-              y: src.y,
-              vx: (Math.random()*1-0.5),
-              vy: 0.6 + Math.random()*0.6,
-              rot: Math.random()*6,
-              size: 0.9 + Math.random()*0.9,
-              color: SEASONS[key].leafColor()
-            });
-          }
-        }
-        // update & draw falling hearts
-        for(let i=tree.falling.length-1;i>=0;i--){
-          const p = tree.falling[i];
-          p.x += p.vx;
-          p.y += p.vy;
-          p.vy += 0.02; // gravity
-          p.rot += 0.03;
-          ctx.save();
-          ctx.translate(p.x,p.y);
-          ctx.rotate(p.rot);
-          drawHeart(0,0, p.size, p.color);
-          ctx.restore();
-          // remove if off-canvas
-          if(p.y > rect.y + rect.h + 30) tree.falling.splice(i,1);
-        }
-      } else if(key === 'winter'){
-        // spawn snow continuously after branch drawn slightly
-        if(Math.random() < 0.08){
-          tree.falling.push({
-            x: rect.x + Math.random()*rect.w,
-            y: rect.y - 10,
-            vx: (Math.random()*0.4-0.2),
-            vy: 0.4 + Math.random()*0.4,
-            size: 2 + Math.random()*3
-          });
-        }
-        for(let i=tree.falling.length-1;i>=0;i--){
-          const p = tree.falling[i];
-          p.x += p.vx;
-          p.y += p.vy;
-          p.vy += 0.002;
-          ctx.save();
-          drawSnowflake(p.x, p.y, p.size);
-          ctx.restore();
-          if(p.y > rect.y + rect.h + 20) tree.falling.splice(i,1);
-        }
-      }
-    }
-
-    ctx.restore(); // quadrant clip
-  }); // end keys.forEach
-
-  // loop or finish
-  if(elapsed < TOTAL){
-    raf = requestAnimationFrame(drawFrame);
-  } else {
-    // finish: transition to final screen
-    showFinal();
-  }
-}
-
-/* show final birthday screen (fade overlay) */
-function showFinal(){
-  const fin = document.getElementById('finalScreen');
-  fin.classList.add('show');
-  // optional: animate mild moon glow pulses
-}
-
-/* build & start */
 function startAnimation(){
   cancelAnimationFrame(raf);
+  document.getElementById('finalScreen').classList.remove('show');
   startTime = null;
-  // rebuild trees for current canvas size
   buildTrees();
   raf = requestAnimationFrame(drawFrame);
 }
 
-/* button wiring */
+/* wire replay */
 document.getElementById('replay').addEventListener('click', ()=>{
-  // hide final screen if visible
-  document.getElementById('finalScreen').classList.remove('show');
-  // reset any particles
-  for(const k in trees) if(trees[k]) trees[k].falling = [];
-  // restart timeline
   startAnimation();
 });
 
-/* initialize */
+/* init */
 buildTrees();
 startAnimation();
 
-/* adjust on resize (rebuild) */
+/* responsive: rebuild on resize (debounced) */
 let resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(resizeTimer);
   resize();
-  resizeTimer = setTimeout(()=>{
-    buildTrees();
-    startAnimation();
-  }, 220);
+  resizeTimer = setTimeout(()=> { buildTrees(); startAnimation(); }, 180);
 });
 </script>
 </body>
