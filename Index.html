@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Happy Birthday, Grandpa 🌳💙</title>
+
+  <!-- Progressive Web App manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    :root{
+      --bg-top: #cfeefe;
+      --bg-bottom: #eaf8ff;
+      --accent: #1f6f8b;
+      --muted: #6b8a9a;
+      --heart-size: 18px;
+      --width: 1000px; /* design width; scales on small screens */
+      --total-duration: 30s;
+      --sprout-duration: 4s;
+      --branch-duration: 8s;
+      --hearts-duration: 12s;
+      --slide-duration: 2.2s;
+      --wishes-delay: calc(var(--sprout-duration) + var(--branch-duration) + var(--hearts-duration) + var(--slide-duration));
+    }
+
+    *{box-sizing:border-box; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom)); color:#033047;}
+    .page{
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:28px;
+      gap:28px;
+    }
+
+    /* Card container */
+    .card{
+      width: min(950px, 96vw);
+      background: rgba(255,255,255,0.55);
+      border-radius:16px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+      padding: 22px;
+      backdrop-filter: blur(6px);
+      overflow:hidden;
+    }
+
+    header{
+      text-align:center;
+      margin-bottom:12px;
+    }
+    h1{
+      margin: 6px 0 4px;
+      font-size: clamp(28px, 4.2vw, 44px);
+      color: var(--accent);
+      letter-spacing: 0.5px;
+    }
+    p.lead{margin:0;color:var(--muted); font-size:clamp(14px,2.2vw,16px);}
+
+    /* layout: left is animation, right is text/wishes & controls */
+    .layout{
+      display:flex;
+      gap:18px;
+      align-items:stretch;
+      padding-top:12px;
+    }
+
+    .left, .right{
+      flex:1;
+      min-height:380px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      position:relative;
+    }
+
+    /* canvas area for animation */
+    .scene{
+      width:100%;
+      max-width:520px;
+      aspect-ratio:4/3;
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+      border-radius:12px;
+      border:1px solid rgba(3,48,71,0.04);
+      position:relative;
+      overflow:hidden;
+      display:flex;
+      align-items:flex-end;
+      justify-content:center;
+      padding-bottom:28px;
+    }
+
+    /* floating orbs (background bubbles) */
+    .orb{
+      position:absolute;border-radius:50%;
+      opacity:0.12; filter: blur(6px);
+      animation: floaty 8s infinite ease-in-out;
+    }
+    .orb.o1{width:120px;height:120px;left:8%;top:6%;background:#d9f1ff;animation-duration:10s;}
+    .orb.o2{width:80px;height:80px;right:6%;top:14%;background:#e4f7ff;animation-duration:12s;}
+    .orb.o3{width:140px;height:140px;left:65%;top:2%;background:#d6efff;animation-duration:14s;}
+    @keyframes floaty{
+      0%{transform: translateY(0) translateX(0);}
+      50%{transform: translateY(-10px) translateX(8px);}
+      100%{transform: translateY(0) translateX(0);}
+    }
+
+    /* SVG styling */
+    svg { width: 100%; height: 100%; display:block; }
+    .ground{fill:transparent;}
+    .trunk{ stroke:#5a4232; stroke-width:8; stroke-linecap:round; stroke-linejoin:round; fill:none; }
+    .branch{ stroke:#5a4232; stroke-width:6; stroke-linecap:round; stroke-linejoin:round; fill:none; }
+
+    /* hearts group */
+    .heart{
+      transform-origin:center;
+      opacity:0;
+      transform: scale(0.2);
+      transition: transform 0.45s cubic-bezier(.2,.9,.3,1), opacity .45s;
+    }
+
+    /* tree container (will slide) */
+    #treeWrap{
+      transition: transform var(--slide-duration) ease-in-out;
+    }
+
+    /* wishes area */
+    .wishes{
+      flex:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex-direction:column;
+      gap:10px;
+      padding:8px;
+      min-width:240px;
+      opacity:0;
+      transform: translateY(8px);
+      transition: opacity 700ms ease, transform 700ms ease;
+    }
+    .wishes.show{ opacity:1; transform: translateY(0); }
+
+    .wish-card{
+      width:100%;
+      background: rgba(255,255,255,0.75);
+      border-radius:10px;
+      padding:12px;
+      text-align:center;
+      font-size:clamp(13px,2.2vw,15px);
+      color: #053a49;
+      box-shadow: 0 6px 18px rgba(3,48,71,0.05);
+    }
+
+    /* controls */
+    .controls{
+      display:flex;
+      gap:10px;
+      margin-top:14px;
+      justify-content:center;
+    }
+    button.big{
+      border:0;
+      padding:10px 16px;
+      border-radius:10px;
+      font-size:15px;
+      cursor:pointer;
+      background: linear-gradient(180deg,#fff,#e6f9ff);
+      color:var(--accent);
+      box-shadow: 0 6px 18px rgba(3,48,71,0.06);
+    }
+    button.ghost{
+      background:transparent; border:1px solid rgba(3,48,71,0.08);
+      color:var(--accent);
+    }
+    .small-note{font-size:12px;color:var(--muted);text-align:center;margin-top:8px;}
+
+    /* confetti (simple CSS confetti pieces) */
+    .confetti-piece{
+      position:absolute;
+      width:8px;height:12px;
+      background: #ff6b6b;
+      opacity:0;
+      transform: translateY(-10px) rotate(0deg);
+      border-radius:2px;
+      animation: confetti 1400ms linear forwards;
+    }
+    @keyframes confetti {
+      0%{ opacity:1; transform: translateY(0) rotate(0deg);}
+      100%{ opacity:1; transform: translateY(-120px) rotate(540deg); }
+    }
+
+    /* responsive tweaks */
+    @media (max-width:880px){
+      .layout{flex-direction:column;}
+      .left,.right{min-height:260px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="card" role="application" aria-label="Grandpa birthday app">
+      <header>
+        <h1>Happy Birthday, Grandpa</h1>
+        <p class="lead">Plant a tiny heart. Watch a tree of wishes grow. Tap heart leaves for a message.</p>
+      </header>
+
+      <div class="layout">
+        <!-- LEFT: animation -->
+        <div class="left">
+          <div class="scene" id="scene" aria-hidden="false">
+            <div class="orb o1" aria-hidden="true"></div>
+            <div class="orb o2" aria-hidden="true"></div>
+            <div class="orb o3" aria-hidden="true"></div>
+
+            <!-- SVG animated scene -->
+            <svg viewBox="0 0 1000 750" preserveAspectRatio="xMidYMax meet" id="svgScene" role="img" aria-label="Growing heart tree animation">
+              <!-- ground baseline -->
+              <rect x="0" y="640" width="1000" height="110" fill="rgba(255,255,255,0.02)"></rect>
+
+              <!-- tree wrapper group -->
+              <g id="treeWrap" transform="translate(0,0)">
+                <!-- trunk path (drawn with stroke-dash animation) -->
+                <path id="trunk" class="trunk" d="M500 640 C500 540, 500 470, 500 420 C500 380, 480 360, 470 340" />
+                <!-- branches paths -->
+                <path id="branch1" class="branch" d="M470 340 C430 320, 390 300, 350 260" />
+                <path id="branch2" class="branch" d="M480 340 C520 320, 560 300, 600 260" />
+                <path id="branch3" class="branch" d="M450 380 C400 360, 360 350, 330 320" />
+                <path id="branch4" class="branch" d="M510 380 C560 360, 600 350, 640 320" />
+
+                <!-- hearts placeholder group -->
+                <g id="heartsGroup"></g>
+
+                <!-- small sprout heart at ground to start -->
+                <g id="sprout" transform="translate(500,620)">
+                  <g id="sproutHeart" transform="scale(1)" style="transform-origin:center;">
+                    <path d="M0 -2 
+                       C -10 -2, -10 -14, 0 -18
+                       C 10 -14, 10 -2, 0 -2 Z" fill="#ff6b6b" transform="translate(0,0) scale(1.6)"></path>
+                  </g>
+                </g>
+              </g>
+
+              <!-- moon silhouette (subtle) -->
+              <g transform="translate(820,60) scale(0.8)">
+                <circle cx="0" cy="0" r="40" fill="rgba(255,255,255,0.85)"></circle>
+                <circle cx="14" cy="-6" r="36" fill="rgba(255,255,255,0.12)"></circle>
+              </g>
+            </svg>
+
+            <!-- confetti container -->
+            <div id="confettiRoot" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <!-- RIGHT: wishes and controls -->
+        <div class="right">
+          <div class="wishes" id="wishes">
+            <div class="wish-card" id="wish1">You're our family's steady heart.</div>
+            <div class="wish-card" id="wish2">Thank you for your stories and your jokes.</div>
+            <div class="wish-card" id="wish3">May this year be calm, warm, and full of smiles.</div>
+          </div>
+
+          <div class="controls" aria-hidden="false">
+            <button class="big" id="plantBtn">Plant the Heart 🌱</button>
+            <button class="big ghost" id="replayBtn">Replay</button>
+            <button class="big ghost" id="toggleSlowBtn" title="Toggle slower growth for demo">1x / 0.6x</button>
+          </div>
+
+          <div class="small-note">
+            Tip: Click any heart leaf after the tree grows to reveal a short message.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /*
+      Timeline (seconds, approx):
+      0 - 4s  : sprout growth
+      4 - 12s : trunk + branches animate (stroke draw)
+      12 - 24s: hearts appear & arrange into big heart top
+      24 - 26.2s: slide tree aside
+      26.2 - 30s: wishes fade in
+    */
+
+    const timings = {
+      sprout: 4000,
+      branch: 8000,
+      hearts: 12000,
+      slide: 2200,
+      // computed:
+      total: 0
+    };
+    timings.total = timings.sprout + timings.branch + timings.hearts + timings.slide + 800; // small buffer
+
+    // Elements
+    const plantBtn = document.getElementById('plantBtn');
+    const replayBtn = document.getElementById('replayBtn');
+    const toggleSlowBtn = document.getElementById('toggleSlowBtn');
+    const trunk = document.getElementById('trunk');
+    const branches = [document.getElementById('branch1'),document.getElementById('branch2'),document.getElementById('branch3'),document.getElementById('branch4')];
+    const heartsGroup = document.getElementById('heartsGroup');
+    const sprout = document.getElementById('sproutHeart');
+    const treeWrap = document.getElementById('treeWrap');
+    const wishes = document.getElementById('wishes');
+    const confettiRoot = document.getElementById('confettiRoot');
+
+    let running = false;
+    let slowFactor = 1; // toggle 1 or 0.6
+    toggleSlowBtn.addEventListener('click', ()=>{
+      slowFactor = slowFactor === 1 ? 0.6 : 1;
+      toggleSlowBtn.textContent = slowFactor === 1 ? '1x / 0.6x' : '0.6x / 1x';
+    });
+
+    function resetScene(){
+      // clear hearts
+      heartsGroup.innerHTML = '';
+      // reset trunk & branches stroke dash
+      [trunk,...branches].forEach(p=>{
+        const len = p.getTotalLength();
+        p.style.strokeDasharray = len;
+        p.style.strokeDashoffset = len;
+        p.style.transition = 'none';
+      });
+      // reset sprout
+      sprout.style.transform = 'scale(1)';
+      sprout.style.transition = 'none';
+      // reset tree position
+      treeWrap.style.transform = 'translateX(0)';
+      // hide wishes
+      wishes.classList.remove('show');
+      // remove confetti
+      confettiRoot.innerHTML = '';
+      running = false;
+    }
+
+    // create heart element (as an SVG path) at (x,y), color, small scale
+    function createHeart(x, y, color, id){
+      const ns = "http://www.w3.org/2000/svg";
+      const g = document.createElementNS(ns, 'g');
+      g.setAttribute('transform', `translate(${x},${y})`);
+      g.classList.add('heart');
+      if(id) g.dataset.id = id;
+
+      // heart path (simple heart shape)
+      const path = document.createElementNS(ns,'path');
+      path.setAttribute('d', "M0 -2 C -10 -2, -10 -14, 0 -18 C 10 -14, 10 -2, 0 -2 Z");
+      path.setAttribute('fill', color);
+      path.setAttribute('transform', `scale(${(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--heart-size'))||18)/18})`);
+      g.appendChild(path);
+      heartsGroup.appendChild(g);
+      return g;
+    }
+
+    // place hearts forming a heart-shaped top. We'll compute parametric heart curve
+    function generateHeartPositions(n, centerX=500, centerY=250, scale=10){
+      // parametric heart: x = 16 sin^3(t), y = 13 cos t - 5 cos(2t) - 2 cos(3t) - cos(4t)
+      // t in [0, 2pi]. We'll sample and then map to coordinates
+      const pts = [];
+      for(let i=0;i<n;i++){
+        const t = Math.PI*2 * i / n;
+        const sx = 16 * Math.pow(Math.sin(t),3);
+        const sy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+        pts.push({x: centerX + sx*scale, y: centerY - sy*scale});
+      }
+      return pts;
+    }
+
+    // reveal hearts with staggered timing & slight pop
+    function revealHearts(colors, totalDuration){
+      const n = colors.length;
+      const positions = generateHeartPositions(n, 500, 220, 6.2); // tuned positions
+      const elems = [];
+      for(let i=0;i<n;i++){
+        const c = colors[i];
+        const p = positions[i];
+        const g = createHeart(p.x, p.y, c, 'h'+i);
+        elems.push(g);
+      }
+      // staggered appearance
+      elems.forEach((el,i)=>{
+        const delay = (totalDuration * (i / n)) + 50;
+        setTimeout(()=>{
+          el.style.opacity = '1';
+          el.style.transform = 'scale(1)';
+        }, delay*slowFactor);
+      });
+      // return promise when last heart shown
+      return new Promise(resolve=>{
+        setTimeout(()=>resolve(), totalDuration*slowFactor + 200);
+      });
+    }
+
+    // animate trunk/branches drawing using strokeDashoffset
+    function drawPaths(paths, duration){
+      return new Promise(resolve=>{
+        // small staggering between trunk and branches
+        paths.forEach((p, idx)=>{
+          const len = p.getTotalLength();
+          p.style.strokeDasharray = len;
+          p.style.strokeDashoffset = len;
+          // trigger transition
+          const delay = idx * 280;
+          setTimeout(()=>{
+            p.style.transition = `stroke-dashoffset ${duration*0.001}s ease-out`;
+            p.style.strokeDashoffset = '0';
+          }, delay*slowFactor);
+        });
+        // resolve after duration + last delay
+        setTimeout(resolve, (duration + paths.length*280)*slowFactor);
+      });
+    }
+
+    // sprout growth animation
+    function sproutGrow(duration){
+      return new Promise(resolve=>{
+        sprout.style.transition = `transform ${duration*0.001}s cubic-bezier(.2,.9,.3,1)`;
+        setTimeout(()=>{ sprout.style.transform = 'scale(1.9) translateY(-42px)'; }, 60);
+        setTimeout(resolve, duration*slowFactor + 80);
+      });
+    }
+
+    // slide tree aside
+    function slideTree(direction='left'){
+      return new Promise(resolve=>{
+        const dist = 260; // px
+        treeWrap.style.transition = `transform ${timings.slide*0.001 * slowFactor}s ease-in-out`;
+        const tx = direction === 'left' ? -dist : dist;
+        setTimeout(()=>{ treeWrap.style.transform = `translateX(${tx}px)`; }, 40);
+        setTimeout(resolve, timings.slide*slowFactor + 80);
+      });
+    }
+
+    // show wishes
+    function showWishes(){
+      wishes.classList.add('show');
+    }
+
+    // small confetti burst (pure CSS pieces)
+    function confettiBurst(){
+      const colors = ['#FF6B6B','#F7C59F','#FFD166','#7BD389','#7BC7FF'];
+      for(let i=0;i<32;i++){
+        const d = document.createElement('div');
+        d.className = 'confetti-piece';
+        d.style.left = (40 + Math.random()*420) + 'px';
+        d.style.bottom = (10 + Math.random()*40) + 'px';
+        d.style.background = colors[Math.floor(Math.random()*colors.length)];
+        d.style.transform = `translateY(0) rotate(${Math.random()*360}deg)`;
+        d.style.animationDelay = (Math.random()*200) + 'ms';
+        confettiRoot.appendChild(d);
+        setTimeout(()=>d.remove(), 1800 + Math.random()*600);
+      }
+    }
+
+    // single run sequence
+    async function runSequence(){
+      if(running) return;
+      running = true;
+      resetScene(); // ensure styles reset immediately
+      // small timeout to ensure CSS resets applied
+      await new Promise(r=>setTimeout(r,40));
+
+      // 1) sprout grows
+      await sproutGrow(timings.sprout);
+
+      // 2) trunk + branches draw
+      await drawPaths([trunk, ...branches], timings.branch);
+
+      // 3) hearts appear (generate colors)
+      // choose 48 hearts with color mix
+      const colors = [];
+      const palette = ['#ff6b6b','#ff9aa2','#ffd6e0','#ffe9f1','#fff1f6','#ffd166','#ffb4a2'];
+      for(let i=0;i<48;i++) colors.push(palette[i % palette.length]);
+      await revealHearts(colors, timings.hearts);
+
+      // 4) slight pop & confetti, slide aside
+      confettiBurst();
+      await slideTree('left');
+
+      // 5) show wishes
+      showWishes();
+
+      // small final confetti
+      setTimeout(confettiBurst, 400);
+
+      // let it finish
+      setTimeout(()=>{ running = false; }, 1200);
+    }
+
+    // initial reset
+    resetScene();
+
+    // button listeners
+    plantBtn.addEventListener('click', runSequence);
+    replayBtn.addEventListener('click', ()=>{
+      resetScene();
+      setTimeout(runSequence,80);
+    });
+
+    // clicking heart leaves shows a tiny message (using title-like popup)
+    heartsGroup.addEventListener('click', (e)=>{
+      let target = e.target;
+      while(target && target !== heartsGroup){
+        if(target.tagName === 'g' && target.dataset && target.dataset.id){
+          // show small toast
+          const messages = [
+            "You make every day better.",
+            "We love your stories.",
+            "Your smile is our sunshine.",
+            "Thanks for teaching us patience.",
+            "Grandpa, you're a legend."
+          ];
+          const msg = messages[Math.floor(Math.random()*messages.length)];
+          showToast(msg);
+          return;
+        }
+        target = target.parentNode;
+      }
+    });
+
+    // tiny floating toast for heart clicks
+    function showToast(text){
+      const t = document.createElement('div');
+      t.textContent = text;
+      t.style.position = 'absolute';
+      t.style.left = '50%';
+      t.style.transform = 'translateX(-50%)';
+      t.style.bottom = '92px';
+      t.style.background = 'rgba(255,255,255,0.9)';
+      t.style.padding = '8px 12px';
+      t.style.borderRadius = '999px';
+      t.style.boxShadow = '0 6px 18px rgba(3,48,71,0.07)';
+      t.style.fontSize = '13px';
+      document.querySelector('.scene').appendChild(t);
+      setTimeout(()=>t.style.opacity = '0', 2000);
+      setTimeout(()=>t.remove(), 2600);
+    }
+
+    // Accessibility: allow Enter/Space to trigger plant button
+    plantBtn.addEventListener('keyup',(e)=>{ if(e.key === 'Enter' || e.key === ' ') runSequence(); });
+
+    // Register service worker (for offline + PWA support)
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('service-worker.js').then(()=>{ /* registered */ }).catch(()=>{ /* fail silently */ });
+    }
+  </script>
+</body>
+</html>
