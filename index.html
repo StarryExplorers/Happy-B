@@ -1,505 +1,535 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Happy Birthday, Grandpa 🌙💙</title>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0b2b45" />
-  <style>
-    :root{
-      --sky-top: #07142a;       /* dark navy */
-      --sky-bottom: #0b3b5a;    /* slightly blue */
-      --moon-glow: rgba(255,255,245,0.12);
-      --accent: #79c6ff;
-      --card-bg: rgba(255,255,255,0.03);
-      --muted: #9fb9cc;
-      --heart-size: 20px;
-      --sprout-dur: 4000; /* ms */
-      --branch-dur: 8000;
-      --hearts-dur: 12000;
-      --slide-dur: 2200;
-    }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Seasonal Birthday Tree — Happy Birthday Grandpa</title>
+<style>
+  :root{
+    --stage-w: 1200px;
+    --bg-dark: #07142a;
+    --final-bg: linear-gradient(180deg,#041423,#07243a);
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#fff;background:var(--bg-dark);}
+  .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:18px;}
+  .card{width:min(1100px,96vw);height:min(720px,86vh);border-radius:12px;overflow:hidden;position:relative;box-shadow:0 18px 60px rgba(0,0,0,0.6);}
+  /* four quadrant backgrounds (images you provide) */
+  .grid{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;}
+  .cell{position:relative;overflow:hidden;border:1px solid rgba(255,255,255,0.02)}
+  .spring{ background: center/cover no-repeat url('spring.png'); background-color:#dff7e2; }
+  .summer{ background: center/cover no-repeat url('summer.png'); background-color:#ffedd8; }
+  .autumn{ background: center/cover no-repeat url('autumn.png'); background-color:#fff0e0; }
+  .winter{ background: center/cover no-repeat url('winter.png'); background-color:#eaf6ff; }
 
-    /* Basic layout */
-    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial; background: linear-gradient(180deg,var(--sky-top),var(--sky-bottom)); color:#eaf6ff;}
-    .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px;}
-    .card{width:min(1000px,96vw); border-radius:14px; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); box-shadow: 0 12px 40px rgba(3,20,34,0.6); padding:18px; overflow:hidden;}
-    header{text-align:center;margin-bottom:8px;}
-    h1{margin:4px 0;font-size:clamp(24px,3.6vw,40px);color:var(--accent);}
-    p.lead{margin:0;color:var(--muted);font-size:clamp(13px,2vw,15px);}
+  /* overlay canvas (one canvas to draw all 4 trees) */
+  canvas#scene{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:2}
 
-    /* two-column layout */
-    .layout{display:flex;gap:18px;align-items:stretch;}
-    .left,.right{flex:1;min-height:420px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-    @media (max-width:880px){ .layout{flex-direction:column;} .left,.right{min-height:300px;} }
+  /* top UI */
+  .ui{position:absolute;left:12px;top:12px;z-index:6;display:flex;gap:8px}
+  button{padding:8px 12px;border-radius:10px;border:0;background:linear-gradient(180deg,#0d6d9a,#044a6b);color:white;cursor:pointer;box-shadow:0 6px 14px rgba(0,0,0,0.4)}
+  .small{color:rgba(255,255,255,0.85);font-size:13px;margin-left:8px;align-self:center}
 
-    /* Background canvas stack */
-    #bgCanvas{position:absolute;inset:0;width:100%;height:100%;z-index:0;border-radius:14px;pointer-events:none;}
+  /* final birthday screen */
+  .final{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;opacity:0;pointer-events:none;transition:opacity 900ms ease;}
+  .final.show{opacity:1;pointer-events:auto}
+  .final .moon{width:160px;height:160px;border-radius:50%;position:relative;box-shadow:0 0 40px 20px rgba(255,250,230,0.06), inset -14px -6px 40px rgba(0,0,0,0.12); background:radial-gradient(circle at 36% 30%, rgba(255,255,245,0.98), rgba(255,255,245,0.85) 35%, rgba(255,255,245,0.0) 70%); transform:translateY(-24px)}
+  .final h1{font-size:clamp(28px,4.5vw,56px);color:#dff7ff;text-shadow:0 0 18px rgba(121,198,255,0.45), 0 6px 30px rgba(0,0,0,0.6)}
+  .final .glow{font-weight:800;letter-spacing:1px;color:#dff7ff;text-shadow:0 0 10px rgba(121,198,255,0.8), 0 10px 30px rgba(3,18,30,0.6);font-size:clamp(22px,3vw,36px);}
 
-    /* scene container (on top of bg) */
-    .scene{position:relative;z-index:1;width:100%;max-width:560px;aspect-ratio:4/3;border-radius:12px;overflow:hidden;display:flex;align-items:flex-end;justify-content:center;padding-bottom:24px;}
-    .panel{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative;}
-
-    /* svg styles */
-    svg{width:100%;height:100%;display:block}
-    .trunk{stroke:#6b4533; stroke-width:8; stroke-linecap:round; stroke-linejoin:round; fill:none;}
-    .branch{stroke:#6b4533; stroke-width:6; stroke-linecap:round; stroke-linejoin:round; fill:none;}
-    .sprout-heart path{fill:#ff6b6b; transition: transform 350ms cubic-bezier(.2,.9,.3,1); transform-origin:center;}
-    .heart{opacity:0; transform: scale(0.2); transition: transform 420ms cubic-bezier(.2,.9,.3,1), opacity 420ms;}
-    #treeWrap{transition: transform var(--slide-dur) ease-in-out;}
-
-    /* wishes area */
-    .wishes{width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;opacity:0;transform:translateY(8px);transition:opacity 600ms ease, transform 600ms ease;}
-    .wishes.show{opacity:1;transform:translateY(0);}
-    .wish-card{width:100%;max-width:340px;background:rgba(255,255,255,0.04);padding:14px;border-radius:10px;color:#e8fbff;text-align:center;box-shadow: 0 8px 24px rgba(2,12,20,0.4);font-size:15px;}
-
-    /* controls */
-    .controls{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;justify-content:center;}
-    button{padding:10px 14px;border-radius:10px;border:0;cursor:pointer;font-weight:600;background:linear-gradient(180deg,#0e6ea4,#074f7a);color:white;box-shadow:0 6px 18px rgba(2,12,20,0.4);}
-    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.08);color:var(--accent);box-shadow:none;}
-
-    /* confetti */
-    .confetti{position:absolute;left:0;right:0;bottom:0;height:0;pointer-events:none;}
-    .conf-piece{position:absolute;width:8px;height:12px;border-radius:2px;opacity:0;transform:translateY(0) rotate(0deg);}
-
-    /* toast */
-    .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:88px;background:rgba(255,255,255,0.95);color:#072433;padding:8px 12px;border-radius:999px;box-shadow:0 10px 30px rgba(2,12,20,0.5);font-weight:600;}
-    .small{font-size:13px;color:var(--muted);margin-top:8px;text-align:center;}
-  </style>
+  /* small credits */
+  .footer{position:absolute;right:12px;bottom:10px;z-index:6;color:rgba(255,255,255,0.7);font-size:12px}
+</style>
 </head>
 <body>
   <div class="wrap">
-    <div class="card" role="application" aria-label="Grandpa birthday app">
-      <header>
-        <h1>Happy Birthday, Grandpa</h1>
-        <p class="lead">Plant the little heart — watch a tree bloom with wishes ✨</p>
-      </header>
-
-      <div class="layout">
-        <!-- LEFT: scene -->
-        <div class="left">
-          <canvas id="bgCanvas" aria-hidden="true"></canvas>
-
-          <div class="scene panel" id="scenePanel">
-            <svg viewBox="0 0 1000 750" preserveAspectRatio="xMidYMax meet" id="svgScene" role="img" aria-label="Growing heart tree">
-              <rect x="0" y="640" width="1000" height="110" fill="rgba(255,255,255,0.01)"></rect>
-
-              <g id="treeWrap" transform="translate(0,0)">
-                <!-- trunk -->
-                <path id="trunk" class="trunk" d="M500 640 C500 540, 500 470, 500 420 C500 380, 480 360, 470 340" />
-                <!-- branches -->
-                <path id="b1" class="branch" d="M470 340 C430 320, 390 300, 350 260" />
-                <path id="b2" class="branch" d="M480 340 C520 320, 560 300, 600 260" />
-                <path id="b3" class="branch" d="M450 380 C400 360, 360 350, 330 320" />
-                <path id="b4" class="branch" d="M510 380 C560 360, 600 350, 640 320" />
-
-                <g id="heartsGroup"></g>
-
-                <!-- sprout (starts at ground) -->
-                <g id="sprout" transform="translate(500,620)" class="sprout-heart" aria-hidden="false">
-                  <path d="M0 -2 C -10 -2, -10 -14, 0 -18 C 10 -14, 10 -2, 0 -2 Z" fill="#ff6b6b" transform="scale(1.6)"/>
-                </g>
-              </g>
-
-              <!-- subtle moon silhouette (drawn here but bg canvas also draws moon glow) -->
-              <g transform="translate(820,60) scale(0.9)">
-                <circle cx="0" cy="0" r="42" fill="rgba(255,255,245,0.9)"></circle>
-                <circle cx="14" cy="-6" r="36" fill="rgba(255,255,245,0.12)"></circle>
-              </g>
-            </svg>
-
-            <div id="confetti" class="confetti" aria-hidden="true"></div>
-          </div>
-        </div>
-
-        <!-- RIGHT: wishes + controls -->
-        <div class="right">
-          <div class="wishes" id="wishes">
-            <div class="wish-card">You are our family's steady heart.</div>
-            <div class="wish-card">Thanks for every story and smile.</div>
-            <div class="wish-card">Wishing you calm days and warm tea.</div>
-          </div>
-
-          <div class="controls" role="toolbar" aria-label="Controls">
-            <button id="plantBtn">Plant the Heart 🌱</button>
-            <button id="replayBtn" class="ghost">Replay</button>
-            <button id="toggleBtn" class="ghost" title="Toggle speed">1x / 0.6x</button>
-          </div>
-
-          <div class="small">Tip: tap any little heart when it appears for a short message.</div>
-        </div>
+    <div class="card" role="application" aria-label="Seasonal Birthday Tree App">
+      <div class="grid" aria-hidden="true">
+        <div class="cell spring" data-season="spring"></div>
+        <div class="cell summer" data-season="summer"></div>
+        <div class="cell autumn" data-season="autumn"></div>
+        <div class="cell winter" data-season="winter"></div>
       </div>
+
+      <canvas id="scene" aria-label="Animated seasonal trees"></canvas>
+
+      <div class="ui">
+        <button id="replay">Replay</button>
+        <span class="small">Seasonal trees grow automatically on load</span>
+      </div>
+
+      <div class="final" id="finalScreen" aria-hidden="true">
+        <div class="moon" aria-hidden="true"></div>
+        <h1 class="glow">Happy Birthday, Grandpa</h1>
+        <div style="color:#cfefff;opacity:0.95">Wishing you calm days and warm smiles.</div>
+      </div>
+
+      <div class="footer">Made with ♥ — Spark & Nova</div>
     </div>
   </div>
 
 <script>
-/* -------------------------
-  Config / timings (ms)
-   Sprout: 0 - sproutDur
-   Branch draw: next branchDur
-   Hearts bloom: next heartsDur
-   Slide: slideDur
-   Wishes appear after slide
-------------------------- */
-const timings = {
-  sprout: parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sprout-dur')) || 4000,
-  branch: parseInt(getComputedStyle(document.documentElement).getPropertyValue('--branch-dur')) || 8000,
-  hearts: parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hearts-dur')) || 12000,
-  slide: parseInt(getComputedStyle(document.documentElement).getPropertyValue('--slide-dur')) || 2200
+/* --------------------
+  Seasonal Trees demo
+  - Single canvas divided into 4 regions
+  - Each region grows a natural tree (recursive rules)
+  - Leaves/hearts are drawn with variations (size, rotation, color)
+  - Autumn has falling hearts, Winter has snow
+  - All trees grow simultaneously; after ~29s show final message
+-------------------- */
+
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d', { alpha: true });
+let DPR = Math.max(1, window.devicePixelRatio || 1);
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.round(rect.width * DPR);
+  canvas.height = Math.round(rect.height * DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  layout = rect; // store for partitions
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* timeline (ms) */
+const TIMINGS = {
+  branchGrow: 18000,  // draw branches progressively
+  leavesBloom: 6000,  // reveal leaves/hearts
+  afterPause: 1200,   // small pause
+  fadeToFinal: 1200   // final fade (trigger)
 };
-let slowFactor = 1; // toggled to 0.6 for slower overall
-const totalEstimate = timings.sprout + timings.branch + timings.hearts + timings.slide + 600;
+const TOTAL = TIMINGS.branchGrow + TIMINGS.leavesBloom + TIMINGS.afterPause + TIMINGS.fadeToFinal; // ~29.4s
 
-const plantBtn = document.getElementById('plantBtn');
-const replayBtn = document.getElementById('replayBtn');
-const toggleBtn = document.getElementById('toggleBtn');
-const trunk = document.getElementById('trunk');
-const branches = [document.getElementById('b1'), document.getElementById('b2'), document.getElementById('b3'), document.getElementById('b4')];
-const heartsGroup = document.getElementById('heartsGroup');
-const sprout = document.getElementById('sprout');
-const treeWrap = document.getElementById('treeWrap');
-const wishes = document.getElementById('wishes');
-const confettiRoot = document.getElementById('confetti');
-const bgCanvas = document.getElementById('bgCanvas');
+/* Quadrant definitions (calc from canvas size) */
+function quadRects() {
+  const w = canvas.width / DPR, h = canvas.height / DPR;
+  const halfW = w/2, halfH = h/2;
+  return {
+    spring: {x:0, y:0, w:halfW, h:halfH},
+    summer: {x:halfW, y:0, w:halfW, h:halfH},
+    autumn: {x:0, y:halfH, w:halfW, h:halfH},
+    winter: {x:halfW, y:halfH, w:halfW, h:halfH}
+  };
+}
 
-let running = false;
+/* Utility: cubic bezier point at t */
+function cubicAt(p0,p1,p2,p3,t){
+  const u=1-t; const tt=t*t; const uu=u*u; const uuu=uu*u; const ttt=tt*t;
+  const x = uuu*p0.x + 3*uu*t*p1.x + 3*u*tt*p2.x + ttt*p3.x;
+  const y = uuu*p0.y + 3*uu*t*p1.y + 3*u*tt*p2.y + ttt*p3.y;
+  return {x,y};
+}
 
-/* ---------- Background: canvas night sky, moon glow, floating bubbles ---------- */
-(function initBackground(){
-  const ctx = bgCanvas.getContext('2d');
-  let w, h, dpr;
-  const bubbles = [];
-  const bubbleCount = 12;
-
-  function resize(){
-    dpr = window.devicePixelRatio || 1;
-    w = bgCanvas.clientWidth; h = bgCanvas.clientHeight;
-    bgCanvas.width = Math.max(300, Math.floor(w * dpr));
-    bgCanvas.height = Math.max(200, Math.floor(h * dpr));
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    // initialize bubbles with coords relative to canvas
-    bubbles.length = 0;
-    for(let i=0;i<bubbleCount;i++){
-      bubbles.push({
-        x: Math.random()*w,
-        y: Math.random()*h*0.6,
-        r: 6 + Math.random()*36,
-        vx: (-0.3 + Math.random()*0.6),
-        vy: 0.02 + Math.random()*0.2,
-        alpha: 0.04 + Math.random()*0.12,
-        phase: Math.random()*Math.PI*2
-      });
-    }
-    draw(0);
+/* Generate branch structure recursively.
+   Each branch is represented by an object:
+   {p0, p1, p2, p3, thickness, depth, children: [...], points: [...]}
+   Points will be sampled along bezier to animate partial drawing.
+*/
+function generateBranch(start, angle, length, depth, maxDepth, thickness, spread){
+  // end point
+  const rad = angle * Math.PI/180;
+  const ex = start.x + Math.cos(rad) * length;
+  const ey = start.y + Math.sin(rad) * length;
+  // control points to make a nice curve (randomized slightly for natural look)
+  const cp1 = {
+    x: start.x + Math.cos(rad - 0.35) * (length * (0.35 + Math.random()*0.2)),
+    y: start.y + Math.sin(rad - 0.35) * (length * (0.35 + Math.random()*0.2))
+  };
+  const cp2 = {
+    x: start.x + Math.cos(rad + 0.35) * (length * (0.6 + Math.random()*0.2)),
+    y: start.y + Math.sin(rad + 0.35) * (length * (0.6 + Math.random()*0.2))
+  };
+  const branch = {
+    p0: {x:start.x, y:start.y},
+    p1: cp1,
+    p2: cp2,
+    p3: {x:ex, y:ey},
+    thickness,
+    depth,
+    children: []
+  };
+  // sample points along this bezier for smooth progressive drawing
+  const samples = Math.max(10, Math.round(14 + length / 8));
+  branch.points = [];
+  for(let i=0;i<=samples;i++){
+    const t = i/samples;
+    branch.points.push(cubicAt(branch.p0,branch.p1,branch.p2,branch.p3,t));
   }
 
-  function draw(t){
-    // sky gradient
-    const g = ctx.createLinearGradient(0,0,0,h);
-    g.addColorStop(0, '#07142a');
-    g.addColorStop(1, '#0b3b5a');
-    ctx.fillStyle = g;
-    ctx.fillRect(0,0,w,h);
-
-    // moon glow (radial)
-    const moonX = Math.round(w*0.86);
-    const moonY = Math.round(h*0.1);
-    const moonR = Math.round(Math.min(w,h)*0.08);
-    const rg = ctx.createRadialGradient(moonX, moonY, moonR*0.2, moonX, moonY, moonR*3);
-    rg.addColorStop(0, 'rgba(255,255,245,0.9)');
-    rg.addColorStop(0.25, 'rgba(255,255,245,0.35)');
-    rg.addColorStop(1, 'rgba(255,255,245,0.0)');
-    ctx.fillStyle = rg;
-    ctx.beginPath();
-    ctx.arc(moonX, moonY, moonR*3, 0, Math.PI*2);
-    ctx.fill();
-
-    // half moon (white with subtle inner cut)
-    ctx.beginPath();
-    ctx.fillStyle = 'rgba(255,255,245,0.95)';
-    ctx.arc(moonX, moonY, moonR, 0, Math.PI*2);
-    ctx.fill();
-    // crescent cut
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath();
-    ctx.arc(moonX + moonR*0.25, moonY - moonR*0.06, moonR*0.96, 0, Math.PI*2);
-    ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
-
-    // subtle stars tiny
-    for(let i=0;i<30;i++){
-      const sx = (i*47)%w + (Math.sin(i+t*0.0001)*10);
-      const sy = (i*23)%Math.round(h*0.5);
-      ctx.fillStyle = 'rgba(255,255,255,'+(0.02+Math.abs(Math.sin((t+i)/5000))*0.06)+')';
-      ctx.fillRect((sx%w), sy, 1,1);
+  // branching condition
+  if(depth < maxDepth){
+    // decide number of children (1-3) biased by depth
+    const chance = Math.random();
+    const num = chance < 0.2 ? 1 : (chance < 0.9 ? 2 : 3);
+    for(let i=0;i<num;i++){
+      // child angle deviates
+      const angDelta = (Math.random()*spread - spread/2) + (i - (num-1)/2) * (10 + Math.random()*6);
+      const newAngle = angle + angDelta;
+      const newLen = length * (0.58 + Math.random()*0.18);
+      const newThick = Math.max(0.8, thickness * (0.6 + Math.random()*0.12));
+      branch.children.push(generateBranch(branch.p3, newAngle, newLen, depth+1, maxDepth, newThick, spread));
     }
+  }
+  return branch;
+}
 
-    // animate bubbles
-    bubbles.forEach((b, idx)=>{
-      b.x += b.vx * (0.6 + Math.sin(b.phase + t*0.001)*0.8);
-      b.y -= b.vy * (0.3 + Math.cos(b.phase + t*0.001)*0.6);
-      b.phase += 0.01;
-      if(b.x < -50) b.x = w + 40;
-      if(b.x > w + 50) b.x = -40;
-      if(b.y < -80) b.y = h + 20;
+/* Create tree structure for a quadrant */
+function createTreeFor(rect, season){
+  // root starting point somewhere near bottom center of rect
+  const baseX = rect.x + rect.w*0.5;
+  const baseY = rect.y + rect.h*0.92;
+  // parameters tuned per season for look
+  const maxDepth = 4; // controls complexity
+  const trunkLen = rect.h * 0.28;
+  const trunkThickness = Math.max(6, rect.w * 0.014);
+  // generate trunk as a main bezier
+  const trunk = generateBranch({x:baseX,y:baseY}, -90, trunkLen, 0, 1, trunkThickness, 18);
+  // attach branches recursively to trunk tip
+  const canopyDepth = maxDepth;
+  // create primary branches from trunk tip
+  const children = [];
+  const mainAngles = [-85,-95,-60,-120]; // slightly varied
+  for(let i=0;i<4;i++){
+    const ang = mainAngles[i] + (Math.random()*12-6);
+    const len = trunkLen * (0.9 * (0.8 + Math.random()*0.5));
+    children.push(generateBranch(trunk.p3, ang, len, 1, canopyDepth, trunkThickness*0.66, 46));
+  }
+  trunk.children = trunk.children.concat(children);
 
-      // draw bubble
-      const bg = ctx.createRadialGradient(b.x - b.r*0.3, b.y - b.r*0.3, b.r*0.1, b.x, b.y, b.r);
-      bg.addColorStop(0, `rgba(255,255,255,${Math.min(0.28,b.alpha+0.05)})`);
-      bg.addColorStop(0.6, `rgba(255,255,255,${Math.max(0.02,b.alpha-0.02)})`);
-      bg.addColorStop(1, `rgba(255,255,255,0)`);
-      ctx.fillStyle = bg;
+  // additional small clusters near trunk
+  // recursively expand children deeper using a helper to flatten counts
+  function attachRandom(node, depthLeft){
+    if(depthLeft<=0) return;
+    const decide = Math.random();
+    if(decide>0.45 && node.depth < canopyDepth){
+      const ang = -90 + (Math.random()*140 - 70);
+      const len = trunkLen * (0.5 + Math.random()*0.6) * Math.pow(0.7, node.depth);
+      node.children.push(generateBranch(node.p3, ang, len, node.depth+1, canopyDepth, node.thickness*0.6, 50));
+    }
+    node.children.forEach(ch => attachRandom(ch, depthLeft-1));
+  }
+  attachRandom(trunk, 3);
+
+  return {root:trunk, rect, season};
+}
+
+/* flatten tree branches into an ordered array for progressive drawing */
+function flattenBranches(node, list=[]){
+  list.push(node);
+  node.children.forEach(ch => flattenBranches(ch, list));
+  return list;
+}
+
+/* draw a single branch up to given progress ratio (0..1)
+   we use branch.points to draw up to idx
+*/
+function drawBranchProgress(branch, progress, colorBase){
+  const pts = branch.points;
+  const n = pts.length;
+  const upto = Math.floor(progress * (n-1));
+  if(upto<=0){
+    // draw nothing except maybe a tiny dot at start
+    return;
+  }
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // subtle color based on depth for layering (back darker)
+  const shade = (branch.depth || 0);
+  const r = colorBase.r, g=colorBase.g, b=colorBase.b;
+  const alpha = 0.95 - Math.min(0.5, (branch.depth||0)*0.12);
+  ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+  ctx.lineWidth = Math.max(0.6, branch.thickness);
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for(let i=1;i<=upto;i++){
+    ctx.lineTo(pts[i].x, pts[i].y);
+  }
+  ctx.stroke();
+}
+
+/* draw heart shape at (x,y) ; scale controls size */
+function drawHeart(x,y,scale, color){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(scale,scale);
+  ctx.beginPath();
+  // simple heart path using bezier curves relative to origin
+  ctx.moveTo(0,-8);
+  ctx.bezierCurveTo(-8,-8, -8,-18, 0,-20);
+  ctx.bezierCurveTo(8,-18, 8,-8, 0,-8);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  // slight shadow / glow
+  ctx.shadowColor = 'rgba(0,0,0,0.18)';
+  ctx.shadowBlur = 6;
+  ctx.fill();
+  ctx.restore();
+  ctx.shadowBlur = 0;
+}
+
+/* draw a small leaf (oval) for winter snow fallback if needed */
+function drawSnowflake(x,y, size){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.beginPath();
+  ctx.arc(0,0,size/2,0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/* season palettes and behaviors */
+const SEASONS = {
+  spring: {
+    leafColor: (i)=> `rgba(86, 183, 107, ${0.95 - Math.random()*0.12})`, // greens
+    leafScale: ()=> 0.9 + Math.random()*0.6,
+    falling:false, extraDraw: function(ctx, rect, t) { /* tiny flowers at ground */ }
+  },
+  summer: {
+    leafColor: (i)=> `rgba(${230+Math.random()*10|0}, ${90+Math.random()*40|0}, ${40+Math.random()*30|0}, ${0.98 - Math.random()*0.08})`, // warm orange/red
+    leafScale: ()=> 0.95 + Math.random()*0.6,
+    falling:false,
+    extraDraw: function(ctx, rect, t){
+      // draw a warm sun in top-right of summer quadrant
+      const sunX = rect.x + rect.w*0.85, sunY = rect.y + rect.h*0.14, R = Math.min(rect.w,rect.h)*0.12;
+      const grd = ctx.createRadialGradient(sunX, sunY, R*0.2, sunX, sunY, R*2);
+      grd.addColorStop(0, 'rgba(255,230,170,0.95)');
+      grd.addColorStop(1, 'rgba(255,175,65,0.06)');
+      ctx.fillStyle = grd;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+      ctx.arc(sunX, sunY, R*1.4, 0, Math.PI*2);
       ctx.fill();
+    }
+  },
+  autumn: {
+    leafColor: (i)=> `rgba(${220+Math.random()*20|0}, ${120+Math.random()*30|0}, ${40+Math.random()*20|0}, ${0.95 - Math.random()*0.12})`,
+    leafScale: ()=> 0.95 + Math.random()*0.55,
+    falling:true
+  },
+  winter: {
+    leafColor: ()=> null,
+    leafScale: ()=> 0.7,
+    falling:true, // snow
+  }
+};
+
+/* Build trees for each quadrant */
+let trees = null;
+function buildTrees(){
+  const rects = quadRects();
+  trees = {
+    spring: createTreeFor(rects.spring, 'spring'),
+    summer: createTreeFor(rects.summer, 'summer'),
+    autumn: createTreeFor(rects.autumn, 'autumn'),
+    winter: createTreeFor(rects.winter, 'winter'),
+  };
+  // flatten branches per tree
+  for(const k in trees){
+    const root = trees[k].root;
+    trees[k].branches = flattenBranches(root, []);
+    // create leaf slots (branch endpoints where children length==0 or small)
+    trees[k].leaves = [];
+    trees[k].branches.forEach(b=>{
+      // endpoint is p3
+      if(b.children.length===0 || b.depth >= 3){
+        trees[k].leaves.push({x:b.p3.x + (Math.random()*8-4), y:b.p3.y + (Math.random()*8-4), scale: (SEASONS[k].leafScale()), drawn:false});
+      } else {
+        // also sometimes add leaves along longer branches
+        if(Math.random() > 0.7) trees[k].leaves.push({x:b.p3.x + (Math.random()*12-6), y:b.p3.y + (Math.random()*12-6), scale: (SEASONS[k].leafScale()), drawn:false});
+      }
     });
+    // some tuning: winter has no leaves
+    if(k==='winter'){
+      trees[k].leaves = []; // bare
+    }
+    // autumn falling particle list
+    trees[k].falling = [];
   }
+}
 
-  function loop(t){ draw(t); bgTick = requestAnimationFrame(loop); }
-  let bgTick;
-  window.addEventListener('resize', resize);
+/* Animation state */
+let startTime = null;
+let raf = null;
+
+/* Main draw loop */
+function drawFrame(ts){
+  if(!startTime) startTime = ts;
+  const elapsed = (ts - startTime);
+  // clear
+  ctx.clearRect(0,0,canvas.width/DPR, canvas.height/DPR);
+
+  // per-tree drawing
+  const rects = quadRects();
+  const keys = ['spring','summer','autumn','winter'];
+  keys.forEach(key=>{
+    const tree = trees[key];
+    const rect = rects[key];
+    // clip to quadrant so drawings don't bleed
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rect.x, rect.y, rect.w, rect.h);
+    ctx.clip();
+
+    // seasonal extra drawings (sun etc)
+    if(SEASONS[key].extraDraw) SEASONS[key].extraDraw(ctx, rect, elapsed);
+
+    // compute branch drawing progress: 0..1 over TIMINGS.branchGrow
+    const branchProg = Math.min(1, elapsed / TIMINGS.branchGrow);
+    // leaves bloom starts after branchProg full: leavesProg 0..1 across TIMINGS.leavesBloom
+    const leavesStart = TIMINGS.branchGrow;
+    const leavesProg = Math.max(0, Math.min(1, (elapsed - leavesStart) / TIMINGS.leavesBloom));
+
+    // draw branches in order (back to front): we already flattened in pre-order; to give depth, draw deeper first
+    const branches = tree.branches.slice().sort((a,b)=> (a.depth - b.depth)); // shallow first or deep first? choose deep first
+    branches.forEach(br=>{
+      // compute per-branch local progress (slight staggering using branch index)
+      const idx = tree.branches.indexOf(br);
+      // small offset so branches don't all draw at same instant
+      const localDelay = (idx % 6) * 60; // milliseconds staggering
+      const localProg = Math.max(0, Math.min(1, (elapsed - localDelay) / TIMINGS.branchGrow));
+      // color base for bark (brownish)
+      const colorBase = {r:110, g:69, b:51};
+      drawBranchProgress(br, localProg, colorBase);
+    });
+
+    // draw leaves/hearts according to leavesProg
+    const leaves = tree.leaves;
+    leaves.forEach((leaf, i)=>{
+      // each leaf has its own pop delay
+      const popDelay = i * 80 + 200; // stagger
+      const lp = Math.max(0, Math.min(1, (elapsed - TIMINGS.branchGrow - popDelay) / (TIMINGS.leavesBloom - popDelay)));
+      if(lp > 0){
+        // ease
+        const ease = Math.sin(lp * Math.PI * 0.5);
+        // position slightly jitter for "pop"
+        const x = leaf.x + (1 - lp) * (Math.random()*6 - 3);
+        const y = leaf.y + (1 - lp) * (Math.random()*6 - 3);
+        // seasonal color
+        const color = (SEASONS[key].leafColor && SEASONS[key].leafColor(i)) || 'rgba(255,255,255,0.95)';
+        const sc = leaf.scale * (0.5 + ease*1.2);
+        // some rotation based on i and key for natural look: (we use transform via saved canvas)
+        ctx.save();
+        ctx.translate(x,y);
+        ctx.rotate((i%7 - 3) * 0.06 * (1-lp));
+        ctx.translate(-x,-y);
+        drawHeart(x,y, sc, color);
+        ctx.restore();
+
+        // mark drawn
+        leaf.drawn = leaf.drawn || lp > 0.05;
+      }
+    });
+
+    // seasonal falling behavior (autumn hearts, winter snow)
+    if(tree && (SEASONS[key].falling)){
+      if(key === 'autumn'){
+        // spawn some falling hearts after leavesProg>0.2
+        if(leavesProg > 0.25 && Math.random() < 0.03){
+          // pick random leaf origin
+          const src = tree.leaves[Math.floor(Math.random()*Math.max(1,tree.leaves.length))];
+          if(src){
+            tree.falling.push({
+              x: src.x + (Math.random()*20-10),
+              y: src.y,
+              vx: (Math.random()*1-0.5),
+              vy: 0.6 + Math.random()*0.6,
+              rot: Math.random()*6,
+              size: 0.9 + Math.random()*0.9,
+              color: SEASONS[key].leafColor()
+            });
+          }
+        }
+        // update & draw falling hearts
+        for(let i=tree.falling.length-1;i>=0;i--){
+          const p = tree.falling[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.02; // gravity
+          p.rot += 0.03;
+          ctx.save();
+          ctx.translate(p.x,p.y);
+          ctx.rotate(p.rot);
+          drawHeart(0,0, p.size, p.color);
+          ctx.restore();
+          // remove if off-canvas
+          if(p.y > rect.y + rect.h + 30) tree.falling.splice(i,1);
+        }
+      } else if(key === 'winter'){
+        // spawn snow continuously after branch drawn slightly
+        if(Math.random() < 0.08){
+          tree.falling.push({
+            x: rect.x + Math.random()*rect.w,
+            y: rect.y - 10,
+            vx: (Math.random()*0.4-0.2),
+            vy: 0.4 + Math.random()*0.4,
+            size: 2 + Math.random()*3
+          });
+        }
+        for(let i=tree.falling.length-1;i>=0;i--){
+          const p = tree.falling[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.002;
+          ctx.save();
+          drawSnowflake(p.x, p.y, p.size);
+          ctx.restore();
+          if(p.y > rect.y + rect.h + 20) tree.falling.splice(i,1);
+        }
+      }
+    }
+
+    ctx.restore(); // quadrant clip
+  }); // end keys.forEach
+
+  // loop or finish
+  if(elapsed < TOTAL){
+    raf = requestAnimationFrame(drawFrame);
+  } else {
+    // finish: transition to final screen
+    showFinal();
+  }
+}
+
+/* show final birthday screen (fade overlay) */
+function showFinal(){
+  const fin = document.getElementById('finalScreen');
+  fin.classList.add('show');
+  // optional: animate mild moon glow pulses
+}
+
+/* build & start */
+function startAnimation(){
+  cancelAnimationFrame(raf);
+  startTime = null;
+  // rebuild trees for current canvas size
+  buildTrees();
+  raf = requestAnimationFrame(drawFrame);
+}
+
+/* button wiring */
+document.getElementById('replay').addEventListener('click', ()=>{
+  // hide final screen if visible
+  document.getElementById('finalScreen').classList.remove('show');
+  // reset any particles
+  for(const k in trees) if(trees[k]) trees[k].falling = [];
+  // restart timeline
+  startAnimation();
+});
+
+/* initialize */
+buildTrees();
+startAnimation();
+
+/* adjust on resize (rebuild) */
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(resizeTimer);
   resize();
-  bgTick = requestAnimationFrame(loop);
-})();
-
-/* ---------- utility: sleep ---------- */
-const sleep = ms => new Promise(r => setTimeout(r, ms*slowFactor));
-
-/* ---------- reset scene styles to start ---------- */
-function resetScene(){
-  // clear hearts
-  heartsGroup.innerHTML = '';
-  // reset strokes for trunk & branches
-  [trunk, ...branches].forEach(p=>{
-    try{
-      const len = p.getTotalLength();
-      p.style.strokeDasharray = len;
-      p.style.strokeDashoffset = len;
-      p.style.transition = 'none';
-    }catch(e){}
-  });
-  // reset sprout transform
-  const sproutPath = sprout.querySelector('path');
-  if(sproutPath){
-    sproutPath.style.transform = 'scale(1.6) translateY(0)';
-    sproutPath.style.transition = 'none';
-  }
-  // reset tree position
-  treeWrap.style.transition = 'none';
-  treeWrap.style.transform = 'translateX(0)';
-  // hide wishes
-  wishes.classList.remove('show');
-  // remove confetti
-  confettiRoot.innerHTML = '';
-  running = false;
-}
-
-/* ---------- create heart SVG group ---------- */
-function createHeartSVG(x, y, color, id){
-  const ns = "http://www.w3.org/2000/svg";
-  const g = document.createElementNS(ns, 'g');
-  g.setAttribute('transform', `translate(${x},${y})`);
-  g.classList.add('heart');
-  if(id) g.dataset.id = id;
-  const path = document.createElementNS(ns,'path');
-  path.setAttribute('d', "M0 -2 C -10 -2, -10 -14, 0 -18 C 10 -14, 10 -2, 0 -2 Z");
-  path.setAttribute('fill', color);
-  path.setAttribute('transform', `scale(${(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--heart-size'))||20)/18})`);
-  g.appendChild(path);
-  heartsGroup.appendChild(g);
-  return g;
-}
-
-/* ---------- parametric heart shape points ---------- */
-function generateHeartPoints(n, centerX=500, centerY=250, scale=6.0){
-  const pts = [];
-  for(let i=0;i<n;i++){
-    const t = Math.PI*2 * i / n;
-    const sx = 16 * Math.pow(Math.sin(t),3);
-    const sy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
-    pts.push({x: centerX + sx*scale, y: centerY - sy*scale});
-  }
-  // shuffle a bit so pop order looks nice
-  for(let i=pts.length-1;i>0;i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [pts[i], pts[j]] = [pts[j], pts[i]];
-  }
-  return pts;
-}
-
-/* ---------- reveal hearts staggered ---------- */
-async function revealHearts(colors, duration){
-  const n = colors.length;
-  const pts = generateHeartPoints(n, 500, 220, 6.2);
-  const elems = [];
-  for(let i=0;i<n;i++){
-    const g = createHeartSVG(pts[i].x, pts[i].y, colors[i % colors.length], 'h'+i);
-    elems.push(g);
-  }
-  // stagger
-  for(let i=0;i<elems.length;i++){
-    await sleep(duration / elems.length / 1.0);
-    elems[i].style.opacity = '1';
-    elems[i].style.transform = 'scale(1)';
-  }
-  // small pause after last heart
-  await sleep(200);
-}
-
-/* ---------- draw trunk & branches ---------- */
-async function drawPaths(paths, duration){
-  // apply stroke-dasharray lengths then transition strokeDashoffset to 0
-  paths.forEach((p, idx) => {
-    try{
-      const len = p.getTotalLength();
-      p.style.strokeDasharray = len;
-      p.style.strokeDashoffset = len;
-      p.style.transition = 'none';
-    }catch(e){}
-  });
-  // small staggering
-  for(let i=0;i<paths.length;i++){
-    const p = paths[i];
-    try{
-      const len = p.getTotalLength();
-      p.style.transition = `stroke-dashoffset ${duration/1000}s ease-out`;
-      // small delay between each path
-      await sleep(220);
-      p.style.strokeDashoffset = '0';
-    }catch(e){}
-  }
-  // wait remaining time
-  await sleep(80);
-}
-
-/* ---------- sprout animation ---------- */
-async function sproutGrow(duration){
-  const path = sprout.querySelector('path');
-  if(!path) return;
-  path.style.transition = `transform ${duration/1000}s cubic-bezier(.2,.9,.3,1)`;
-  // grow and lift up a bit
-  setTimeout(()=> path.style.transform = 'scale(2.2) translateY(-48px)', 20);
-  await sleep(duration + 40);
-}
-
-/* ---------- slide tree aside ---------- */
-async function slideTree(direction='left'){
-  const dist = 260;
-  treeWrap.style.transition = `transform ${timings.slide/1000 * slowFactor}s ease-in-out`;
-  const tx = (direction==='left') ? -dist : dist;
-  setTimeout(()=> treeWrap.style.transform = `translateX(${tx}px)`, 40);
-  await sleep(timings.slide + 40);
-}
-
-/* ---------- confetti burst ---------- */
-function confettiBurst(){
-  const colors = ['#FF6B6B','#FFD166','#7BD389','#7BC7FF','#FFC9DE'];
-  for(let i=0;i<28;i++){
-    const el = document.createElement('div');
-    el.className = 'conf-piece';
-    el.style.left = (40 + Math.random()*420) + 'px';
-    el.style.bottom = '14px';
-    el.style.width = (6 + Math.random()*8)+'px';
-    el.style.height = (8 + Math.random()*12)+'px';
-    el.style.background = colors[Math.floor(Math.random()*colors.length)];
-    el.style.opacity = '1';
-    el.style.transform = `translateY(0) rotate(${Math.random()*360}deg)`;
-    el.style.transition = `transform 1400ms cubic-bezier(.2,.8,.2,1), opacity 1400ms linear`;
-    confettiRoot.appendChild(el);
-    // animate a bit randomly
-    setTimeout(()=> {
-      el.style.transform = `translateY(-${120 + Math.random()*120}px) rotate(${360 + Math.random()*720}deg)`;
-      el.style.opacity = '0.95';
-    }, 10 + Math.random()*200);
-    setTimeout(()=> el.remove(), 1700 + Math.random()*800);
-  }
-}
-
-/* ---------- toast on heart click ---------- */
-function showToast(text){
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.textContent = text;
-  document.body.appendChild(t);
-  setTimeout(()=> t.style.opacity = '0', 2200);
-  setTimeout(()=> t.remove(), 2600);
-}
-
-/* clickable hearts: show small messages */
-heartsGroup.addEventListener('click', (ev)=>{
-  let g = ev.target;
-  // find parent g with dataset id
-  while(g && g !== heartsGroup){
-    if(g.tagName && g.tagName.toLowerCase()==='g' && g.dataset && g.dataset.id) break;
-    g = g.parentNode;
-  }
-  if(g && g.dataset && g.dataset.id){
-    const msgs = [
-      "We love your stories.",
-      "You light up our home.",
-      "Thanks for all the cookies!",
-      "Your laugh is the best.",
-      "Grandpa, you're golden."
-    ];
-    showToast(msgs[Math.floor(Math.random()*msgs.length)]);
-  }
+  resizeTimer = setTimeout(()=>{
+    buildTrees();
+    startAnimation();
+  }, 220);
 });
-
-/* ---------- main sequence ---------- */
-async function runSequence(){
-  if(running) return;
-  running = true;
-  resetScene();
-
-  // tiny pause to let CSS reset
-  await sleep(40);
-
-  // 1) sprout grow
-  await sproutGrow(timings.sprout);
-
-  // 2) draw trunk + branches
-  await drawPaths([trunk, ...branches], timings.branch);
-
-  // 3) hearts bloom (choose colors & count)
-  const palette = ['#ff6b6b','#ff9aa2','#ffd6e0','#ffe9f1','#fff1f6','#ffd166','#ffb4a2'];
-  const heartsCount = 48;
-  const colors = Array.from({length: heartsCount}, (_,i)=>palette[i % palette.length]);
-  await revealHearts(colors, timings.hearts);
-
-  // 4) confetti + slide
-  confettiBurst();
-  await slideTree('left');
-
-  // 5) show wishes
-  wishes.classList.add('show');
-
-  // extra confetti
-  setTimeout(confettiBurst, 400);
-
-  // finish
-  await sleep(1200);
-  running = false;
-}
-
-/* ---------- wiring ---------- */
-plantBtn.addEventListener('click', runSequence);
-replayBtn.addEventListener('click', ()=>{
-  resetScene();
-  setTimeout(runSequence,80);
-});
-toggleBtn.addEventListener('click', ()=>{
-  slowFactor = slowFactor === 1 ? 0.6 : 1;
-  toggleBtn.textContent = slowFactor === 1 ? '1x / 0.6x' : '0.6x / 1x';
-});
-
-/* start in idle state (sprout visible small) */
-resetScene();
-
-/* Register service worker */
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('service-worker.js').catch(()=>{/* ignore failures */});
-}
 </script>
 </body>
 </html>
